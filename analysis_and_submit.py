@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 
 def load_env() -> None:
@@ -280,15 +280,98 @@ def main() -> None:
     feature_cols = [c for c in feature_cols if c in train_enc.columns]
 
     train_df, valid_df = prepare_train_valid(train_enc)
-    print("[INFO] 모델 학습 중...")
-    model = train_model(train_df, valid_df, feature_cols)
 
-    # 추후 필요 시 모델 기반 예측으로 확장할 수 있으나,
-    # 제출 포맷 복잡성을 고려해 현재는 메뉴별 단순 시계열 기반 예측을 사용.
-    print("[INFO] 제출용 단순 시계열 예측 생성...")
-    all_series = build_series_for_forecast(train, test_files)
-    forecasts = naive_menu_level_forecast(all_series, horizon=7)
-    submission = fill_submission_with_forecast(sample_submission, forecasts, horizon=7)
+    # 수치/인코딩된 피처 정규화 (StandardScaler)
+    print("[INFO] 피처 정규화(standardization) 수행...")
+    scaler = StandardScaler()
+    train_df_scaled = train_df.copy()
+    valid_df_scaled = valid_df.copy()
+    train_df_scaled[feature_cols] = scaler.fit_transform(train_df_scaled[feature_cols])
+    valid_df_scaled[feature_cols] = scaler.transform(valid_df_scaled[feature_cols])
+
+    print("[INFO] 모델 학습 중...")
+    model = train_model(train_df_scaled, valid_df_scaled, feature_cols)
+
+    # ==== RandomForest 기반 제출 파일 생성 ====
+    print("[INFO] RandomForest 기반 제출용 예측 생성...")
+
+    # sample_submission 구조: 영업일자 컬럼에 TEST_xx+1일 ~ +7일 형태 문자열
+    sub = sample_submission.copy()
+    menu_cols = [c for c in sub.columns if c != "영업일자"]
+
+    # 테스트 파일별 마지막 영업일자 (예측 시작 기준일)
+    last_dates: Dict[str, pd.Timestamp] = {}
+    for name, df in test_files.items():
+        if len(df) == 0:
+            continue
+        last_dates[name.split(".")[0]] = pd.to_datetime(df["영업일자"]).max()
+
+    # (row_idx, menu_idx, 영업일자, 영업장명_메뉴명) 조합으로 미래 예측용 row 생성
+    records = []
+    menu_to_idx = {m: i for i, m in enumerate(menu_cols)}
+
+    for row_idx, code in enumerate(sub["영업일자"].astype(str)):
+        # 예: "TEST_00+1일" -> test_id="TEST_00", offset=1
+        try:
+            test_id, offset = code.split("+", 1)
+            day_str = offset.replace("일", "")
+            horizon = int(day_str)
+        except Exception:
+            # 예상치 못한 포맷은 스킵 (0으로 남게 됨)
+            continue
+
+        if test_id not in last_dates:
+            continue
+
+        base_date = last_dates[test_id]
+        target_date = base_date + timedelta(days=horizon)
+
+        for menu_name in menu_cols:
+            records.append(
+                {
+                    "row_idx": row_idx,
+                    "menu_idx": menu_to_idx[menu_name],
+                    "영업일자": target_date,
+                    "영업장명_메뉴명": menu_name,
+                }
+            )
+
+    if len(records) == 0:
+        print("[WARN] 예측용 레코드가 생성되지 않았습니다. 기존 제출 포맷을 유지합니다.")
+        submission = sample_submission
+    else:
+        future_raw = pd.DataFrame(records)
+
+        # train과 동일한 특성 공학 적용
+        future_fe = build_features(future_raw)
+
+        # 범주형 인코딩: 학습된 encoders 재사용
+        for col in cat_cols:
+            if col in future_fe.columns and col in encoders:
+                future_fe[col] = encoders[col].transform(
+                    future_fe[col].astype(str).fillna("Unknown")
+                )
+
+        # 모델 입력 피처 구성 및 정규화 적용
+        future_fe_scaled = future_fe.copy()
+        future_fe_scaled[feature_cols] = scaler.transform(future_fe_scaled[feature_cols])
+
+        # 예측 수행
+        x_future = future_fe_scaled[feature_cols]
+        y_pred = model.predict(x_future)
+
+        # (row_idx, menu_idx) 기반으로 sample_submission 형태로 재배열
+        n_rows = len(sub)
+        n_menus = len(menu_cols)
+        preds_mat = np.zeros((n_rows, n_menus), dtype=float)
+
+        row_indices = future_fe["row_idx"].astype(int).values
+        menu_indices = future_fe["menu_idx"].astype(int).values
+        preds_mat[row_indices, menu_indices] = y_pred
+
+        submission = sub.copy()
+        for j, col in enumerate(menu_cols):
+            submission[col] = preds_mat[:, j]
 
     output_path = os.path.join(base_dir, "submission.csv")
     submission.to_csv(output_path, index=False, encoding="utf-8-sig")
