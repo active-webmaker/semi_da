@@ -1,0 +1,112 @@
+[VALID] Threshold sweep (coarse):
+  thr=0.10 -> SMAPE=151.2239
+  thr=0.20 -> SMAPE=129.5965
+  thr=0.30 -> SMAPE=118.3555
+  thr=0.40 -> SMAPE=109.7594
+  thr=0.50 -> SMAPE=104.5996
+  thr=0.60 -> SMAPE=103.6535
+  thr=0.70 -> SMAPE=106.5179
+  thr=0.80 -> SMAPE=111.7624
+  thr=0.90 -> SMAPE=116.3963
+[VALID] Threshold sweep (fine):
+  thr=0.55 -> SMAPE=103.2304
+  thr=0.56 -> SMAPE=102.9665
+  thr=0.57 -> SMAPE=103.1770
+  thr=0.58 -> SMAPE=103.2532
+  thr=0.59 -> SMAPE=103.3966
+  thr=0.60 -> SMAPE=103.6535
+  thr=0.61 -> SMAPE=103.9259
+  thr=0.62 -> SMAPE=104.3445
+  thr=0.63 -> SMAPE=104.6175
+  thr=0.64 -> SMAPE=105.0300
+  thr=0.65 -> SMAPE=105.2493
+[VALID] Best zero_threshold: 0.5600
+[VALID] SMAPE_all: 102.9665
+[VALID] SMAPE_competition: 76.2227
+[VALID] RMSE: 15.7331
+[VALID] MAE: 5.1166
+[VALID] SMAPE_all (int): 102.5389
+[VALID] SMAPE_competition (int): 75.6773
+[VALID] RMSE (int): 15.7368
+[VALID] MAE (int): 5.1147
+[TEST 0] SMAPE_all: 109.3063
+[TEST 0] SMAPE_competition: 85.4925
+[TEST 0] RMSE: 13.8155
+[TEST 0] MAE: 4.2485
+[TEST 0] SMAPE_all (int): 108.5077
+[TEST 0] SMAPE_competition (int): 84.4842
+[TEST 0] RMSE (int): 13.8148
+[TEST 0] MAE (int): 4.2424
+[TEST 1] SMAPE_all: 101.0047
+[TEST 1] SMAPE_competition: 80.8329
+[TEST 1] RMSE: 6.9064
+[TEST 1] MAE: 2.8200
+[TEST 1] SMAPE_all (int): 100.6138
+[TEST 1] SMAPE_competition (int): 80.3624
+[TEST 1] RMSE (int): 6.9100
+[TEST 1] MAE (int): 2.8144
+[TEST 2] SMAPE_all: 116.0692
+[TEST 2] SMAPE_competition: 94.9197
+[TEST 2] RMSE: 16.5930
+[TEST 2] MAE: 5.3190
+[TEST 2] SMAPE_all (int): 115.8511
+[TEST 2] SMAPE_competition (int): 94.6467
+[TEST 2] RMSE (int): 16.5946
+[TEST 2] MAE (int): 5.3187
+[TEST 3] SMAPE_all: 96.9068
+[TEST 3] SMAPE_competition: 74.7626
+[TEST 3] RMSE: 22.0078
+[TEST 3] MAE: 7.7805
+[TEST 3] SMAPE_all (int): 96.5485
+[TEST 3] SMAPE_competition (int): 74.3273
+[TEST 3] RMSE (int): 22.0064
+[TEST 3] MAE (int): 7.7752
+[TEST 4] SMAPE_all: 101.4180
+[TEST 4] SMAPE_competition: 79.0176
+[TEST 4] RMSE: 20.4805
+[TEST 4] MAE: 6.6905
+[TEST 4] SMAPE_all (int): 101.0230
+[TEST 4] SMAPE_competition (int): 78.5328
+[TEST 4] RMSE (int): 20.4804
+[TEST 4] MAE (int): 6.6839
+[TEST 5] SMAPE_all: 94.9332
+[TEST 5] SMAPE_competition: 74.5731
+[TEST 5] RMSE: 16.3126
+[TEST 5] MAE: 5.8119
+[TEST 5] SMAPE_all (int): 94.5149
+[TEST 5] SMAPE_competition (int): 74.0737
+[TEST 5] RMSE (int): 16.3180
+[TEST 5] MAE (int): 5.8050
+[TEST 6] SMAPE_all: 94.5406
+[TEST 6] SMAPE_competition: 72.6253
+[TEST 6] RMSE: 26.4375
+[TEST 6] MAE: 9.0738
+[TEST 6] SMAPE_all (int): 94.0355
+[TEST 6] SMAPE_competition (int): 72.0152
+[TEST 6] RMSE (int): 26.4445
+[TEST 6] MAE (int): 9.0694
+[TEST 7] SMAPE_all: 105.7916
+[TEST 7] SMAPE_competition: 89.0716
+[TEST 7] RMSE: 11.8872
+[TEST 7] MAE: 3.1302
+[TEST 7] SMAPE_all (int): 105.4563
+[TEST 7] SMAPE_competition (int): 88.6768
+[TEST 7] RMSE (int): 11.8894
+[TEST 7] MAE (int): 3.1310
+[TEST 8] SMAPE_all: 111.1433
+[TEST 8] SMAPE_competition: 91.3519
+[TEST 8] RMSE: 17.7647
+[TEST 8] MAE: 5.0173
+[TEST 8] SMAPE_all (int): 110.9218
+[TEST 8] SMAPE_competition (int): 91.0809
+[TEST 8] RMSE (int): 17.7651
+[TEST 8] MAE (int): 5.0155
+[TEST 9] SMAPE_all: 112.2270
+[TEST 9] SMAPE_competition: 88.2979
+[TEST 9] RMSE: 15.0859
+[TEST 9] MAE: 5.0861
+[TEST 9] SMAPE_all (int): 111.7043
+[TEST 9] SMAPE_competition (int): 87.6327
+[TEST 9] RMSE (int): 15.0869
+[TEST 9] MAE (int): 5.0801
+[INFO] submission saved: c:\Users\DS29\Documents\proj\ml\open\submission.csv

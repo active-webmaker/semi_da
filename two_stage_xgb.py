@@ -1,11 +1,29 @@
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
 import xgboost
 from dotenv import load_dotenv
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+import warnings
+warnings.filterwarnings("ignore")
+
+LOG_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "two_stage_log.txt")
+
+
+def log(*args, **kwargs) -> None:
+    """간단한 로깅 함수: 콘솔에 출력하고 동일한 내용을 로그 파일에도 저장."""
+    text = " ".join(str(a) for a in args)
+    # 콘솔 출력
+    print(*args, **kwargs)
+    # 파일에도 기록 (에러가 나더라도 학습이 멈추지 않도록 방어)
+    try:
+        with open(LOG_FILE_PATH, "a", encoding="utf-8") as f:
+            f.write(text + "\n")
+    except Exception:
+        pass
 
 
 def smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -18,10 +36,37 @@ def smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return 200 * np.mean(np.abs(y_pred[mask] - y_true[mask]) / denominator[mask])
 
 
+def smape_competition_like(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """대회 평가식과 유사하게, 실제값이 0인 항목은 제외하고 SMAPE를 계산.
+
+    공식 식은 업장별 가중치 w_s 등이 있지만 비공개이므로,
+    여기서는 모든 (t, i) 중에서 A_{t,i} != 0인 샘플만 사용해 단순 평균을 계산한다.
+    """
+    y_true = np.array(y_true, dtype=float)
+    y_pred = np.array(y_pred, dtype=float)
+
+    denominator = (np.abs(y_true) + np.abs(y_pred))
+    # 실제값이 0인 항목 제외 + 분모가 0인 항목 제거
+    mask = (y_true != 0) & (denominator != 0)
+    if not np.any(mask):
+        return 0.0
+    return 200 * np.mean(np.abs(y_pred[mask] - y_true[mask]) / denominator[mask])
+
+
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     if "매출수량" in df.columns:
-        df["매출수량"] = pd.to_numeric(df["매출수량"], errors="coerce").fillna(0).astype(int)
+        # 숫자로 변환 후, 음수 및 극단값을 정리
+        df["매출수량"] = pd.to_numeric(df["매출수량"], errors="coerce").fillna(0)
+
+        positives = df["매출수량"][df["매출수량"] > 0]
+        if len(positives) > 0:
+            p99 = positives.quantile(0.99)
+            df["매출수량"] = df["매출수량"].clip(lower=0, upper=p99)
+        else:
+            df["매출수량"] = df["매출수량"].clip(lower=0)
+
+        df["매출수량"] = df["매출수량"].astype(int)
     for col in ["영업장명_메뉴명"]:
         if col in df.columns:
             df[col] = df[col].fillna("Unknown").astype(str)
@@ -131,7 +176,9 @@ def fit_two_stage_full(
     nonzero_mask = y > 0
     if not np.any(nonzero_mask):
         raise ValueError("학습 데이터에서 매출수량>0 샘플이 없어 2-stage 회귀 모델을 학습할 수 없습니다.")
-    reg.fit(X.loc[nonzero_mask], y[nonzero_mask])
+    # 회귀 타깃에 log1p 변환 적용
+    y_reg_train = np.log1p(y[nonzero_mask])
+    reg.fit(X.loc[nonzero_mask], y_reg_train)
     return clf, reg
 
 
@@ -188,7 +235,9 @@ def forecast_7days_for_test(
         X = X[feature_cols]
 
         proba_zero = clf.predict_proba(X)[:, 1]
-        pred_reg = reg.predict(X)
+        # 회귀 예측(log 스케일)을 원래 스케일로 복원
+        pred_reg_log = reg.predict(X)
+        pred_reg = np.expm1(pred_reg_log)
 
         pred = pred_reg.copy()
         pred[proba_zero >= zero_threshold] = 0.0
@@ -336,8 +385,8 @@ def train_two_stage(
     train_df: pd.DataFrame,
     feature_cols: List[str],
     valid_ratio: float = 0.1,
-    zero_threshold: float = 0.5,
-) -> Tuple[xgboost.XGBClassifier, xgboost.XGBRegressor, pd.DataFrame, pd.DataFrame]:
+    zero_threshold_candidates: Optional[np.ndarray] = None,
+) -> Tuple[xgboost.XGBClassifier, xgboost.XGBRegressor, pd.DataFrame, pd.DataFrame, float]:
     train_split, valid_split = prepare_train_valid(train_df, valid_ratio=valid_ratio)
 
     X_train = train_split[feature_cols]
@@ -374,22 +423,58 @@ def train_two_stage(
 
     nonzero_mask = y_train > 0
     if np.any(nonzero_mask):
-        reg.fit(X_train.loc[nonzero_mask], y_train[nonzero_mask])
+        # 회귀 타깃에 log1p 변환 적용
+        y_reg_train = np.log1p(y_train[nonzero_mask])
+        reg.fit(X_train.loc[nonzero_mask], y_reg_train)
     else:
         raise ValueError("학습 데이터에서 매출수량>0 샘플이 없어 2-stage 회귀 모델을 학습할 수 없습니다.")
 
-    pred_valid = predict_two_stage(clf, reg, X_valid, zero_threshold=zero_threshold)
+    # 1차: 0.1 간격으로 threshold 탐색
+    if zero_threshold_candidates is None:
+        zero_threshold_candidates = np.arange(0.1, 0.91, 0.1)
 
-    print("[VALID] SMAPE:", f"{smape(y_valid, pred_valid):.4f}")
-    print("[VALID] RMSE:", f"{np.sqrt(mean_squared_error(y_valid, pred_valid)):.4f}")
-    print("[VALID] MAE:", f"{mean_absolute_error(y_valid, pred_valid):.4f}")
+    best_thr = 0.5
+    best_smape = float("inf")
+
+    log("[VALID] Threshold sweep (coarse):")
+    for thr in zero_threshold_candidates:
+        pred_valid_tmp = predict_two_stage(clf, reg, X_valid, zero_threshold=float(thr))
+        smape_score = smape(y_valid, pred_valid_tmp)
+        log(f"  thr={thr:.2f} -> SMAPE={smape_score:.4f}")
+        if smape_score < best_smape:
+            best_smape = smape_score
+            best_thr = float(thr)
+
+    # 2차: 1차에서 고른 best_thr 주변을 0.01 간격으로 정밀 탐색
+    fine_start = max(best_thr - 0.05, 0.0)
+    fine_end = min(best_thr + 0.05, 1.0)
+    fine_grid = np.arange(fine_start, fine_end + 1e-8, 0.01)
+
+    log("[VALID] Threshold sweep (fine):")
+    for thr in fine_grid:
+        pred_valid_tmp = predict_two_stage(clf, reg, X_valid, zero_threshold=float(thr))
+        smape_score = smape(y_valid, pred_valid_tmp)
+        log(f"  thr={thr:.2f} -> SMAPE={smape_score:.4f}")
+        if smape_score < best_smape:
+            best_smape = smape_score
+            best_thr = float(thr)
+
+    # 최종 best_thr 기준으로 검증 지표 출력
+    pred_valid = predict_two_stage(clf, reg, X_valid, zero_threshold=best_thr)
+
+    log(f"[VALID] Best zero_threshold: {best_thr:.4f}")
+    log("[VALID] SMAPE_all:", f"{smape(y_valid, pred_valid):.4f}")
+    log("[VALID] SMAPE_competition:", f"{smape_competition_like(y_valid, pred_valid):.4f}")
+    log("[VALID] RMSE:", f"{np.sqrt(mean_squared_error(y_valid, pred_valid)):.4f}")
+    log("[VALID] MAE:", f"{mean_absolute_error(y_valid, pred_valid):.4f}")
 
     pred_valid_int = np.clip(np.rint(pred_valid), 0, None)
-    print("[VALID] SMAPE (int):", f"{smape(y_valid, pred_valid_int):.4f}")
-    print("[VALID] RMSE (int):", f"{np.sqrt(mean_squared_error(y_valid, pred_valid_int)):.4f}")
-    print("[VALID] MAE (int):", f"{mean_absolute_error(y_valid, pred_valid_int):.4f}")
+    log("[VALID] SMAPE_all (int):", f"{smape(y_valid, pred_valid_int):.4f}")
+    log("[VALID] SMAPE_competition (int):", f"{smape_competition_like(y_valid, pred_valid_int):.4f}")
+    log("[VALID] RMSE (int):", f"{np.sqrt(mean_squared_error(y_valid, pred_valid_int)):.4f}")
+    log("[VALID] MAE (int):", f"{mean_absolute_error(y_valid, pred_valid_int):.4f}")
 
-    return clf, reg, train_split, valid_split
+    return clf, reg, train_split, valid_split, best_thr
 
 
 def predict_two_stage(
@@ -399,7 +484,9 @@ def predict_two_stage(
     zero_threshold: float = 0.5,
 ) -> np.ndarray:
     proba_zero = clf.predict_proba(X)[:, 1]
-    pred_reg = reg.predict(X)
+    # 회귀 예측(log 스케일)을 원래 스케일로 복원
+    pred_reg_log = reg.predict(X)
+    pred_reg = np.expm1(pred_reg_log)
 
     pred = pred_reg.copy()
     pred[proba_zero >= zero_threshold] = 0.0
@@ -488,12 +575,11 @@ def main() -> None:
     ]
     feature_cols = [c for c in feature_cols if c in train_enc.columns]
 
-    # (선택) 검증 출력
-    _clf_tmp, _reg_tmp, _train_split, _valid_split = train_two_stage(
+    # (선택) 검증 출력 + zero_threshold 탐색
+    _clf_tmp, _reg_tmp, _train_split, _valid_split, best_zero_threshold = train_two_stage(
         train_enc,
         feature_cols,
         valid_ratio=0.1,
-        zero_threshold=0.5,
     )
 
     # 제출용: 전체 train으로 재학습
@@ -503,16 +589,18 @@ def main() -> None:
         X_test = df[feature_cols]
         y_true = df["매출수량"].values
 
-        pred = predict_two_stage(clf, reg, X_test, zero_threshold=0.5)
+        pred = predict_two_stage(clf, reg, X_test, zero_threshold=best_zero_threshold)
 
-        print(f"[TEST {idx}] SMAPE:", f"{smape(y_true, pred):.4f}")
-        print(f"[TEST {idx}] RMSE:", f"{np.sqrt(mean_squared_error(y_true, pred)):.4f}")
-        print(f"[TEST {idx}] MAE:", f"{mean_absolute_error(y_true, pred):.4f}")
+        log(f"[TEST {idx}] SMAPE_all:", f"{smape(y_true, pred):.4f}")
+        log(f"[TEST {idx}] SMAPE_competition:", f"{smape_competition_like(y_true, pred):.4f}")
+        log(f"[TEST {idx}] RMSE:", f"{np.sqrt(mean_squared_error(y_true, pred)):.4f}")
+        log(f"[TEST {idx}] MAE:", f"{mean_absolute_error(y_true, pred):.4f}")
 
         pred_int = np.clip(np.rint(pred), 0, None)
-        print(f"[TEST {idx}] SMAPE (int):", f"{smape(y_true, pred_int):.4f}")
-        print(f"[TEST {idx}] RMSE (int):", f"{np.sqrt(mean_squared_error(y_true, pred_int)):.4f}")
-        print(f"[TEST {idx}] MAE (int):", f"{mean_absolute_error(y_true, pred_int):.4f}")
+        log(f"[TEST {idx}] SMAPE_all (int):", f"{smape(y_true, pred_int):.4f}")
+        log(f"[TEST {idx}] SMAPE_competition (int):", f"{smape_competition_like(y_true, pred_int):.4f}")
+        log(f"[TEST {idx}] RMSE (int):", f"{np.sqrt(mean_squared_error(y_true, pred_int)):.4f}")
+        log(f"[TEST {idx}] MAE (int):", f"{mean_absolute_error(y_true, pred_int):.4f}")
 
     # submission.csv 생성 (TEST_00~09 각각의 마지막 날짜 이후 7일 예측)
     sub = sample_submission.copy()
@@ -532,7 +620,7 @@ def main() -> None:
             menu_mean_train=menu_mean_train,
             global_mean_train=global_mean_train,
             cat_encoders=encoders,
-            zero_threshold=0.5,
+            zero_threshold=best_zero_threshold,
             horizon=7,
         )
         forecasts_by_test[f"TEST_{test_id:02d}"] = preds_7
@@ -553,7 +641,7 @@ def main() -> None:
 
     output_path = os.path.join(base_dir, "submission.csv")
     sub.to_csv(output_path, index=False, encoding="utf-8-sig")
-    print(f"[INFO] submission saved: {output_path}")
+    log(f"[INFO] submission saved: {output_path}")
 
 
 if __name__ == "__main__":
