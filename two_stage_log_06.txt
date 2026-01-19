@@ -1,0 +1,125 @@
+[VALID] Threshold sweep (coarse):
+  thr=0.10 -> SMAPE=146.7651
+  thr=0.20 -> SMAPE=128.7544
+  thr=0.30 -> SMAPE=116.7260
+  thr=0.40 -> SMAPE=106.3929
+  thr=0.50 -> SMAPE=102.2133
+  thr=0.60 -> SMAPE=101.6940
+  thr=0.70 -> SMAPE=104.2737
+  thr=0.80 -> SMAPE=110.1809
+  thr=0.90 -> SMAPE=115.4278
+[VALID] Threshold sweep (fine):
+  thr=0.55 -> SMAPE=101.5093
+  thr=0.56 -> SMAPE=101.5519
+  thr=0.57 -> SMAPE=101.4209
+  thr=0.58 -> SMAPE=101.5261
+  thr=0.59 -> SMAPE=101.6611
+  thr=0.60 -> SMAPE=101.6940
+  thr=0.61 -> SMAPE=101.7422
+  thr=0.62 -> SMAPE=101.7501
+  thr=0.63 -> SMAPE=102.1543
+  thr=0.64 -> SMAPE=102.5357
+  thr=0.65 -> SMAPE=102.4761
+[VALID] Best zero_threshold: 0.5700
+[VALID] SMAPE_all: 101.4209
+[VALID] SMAPE_competition: 75.5183
+[VALID] RMSE: 15.6359
+[VALID] MAE: 5.0494
+[VALID] SMAPE_all (int): 100.9577
+[VALID] SMAPE_competition (int): 74.9334
+[VALID] RMSE (int): 15.6400
+[VALID] MAE (int): 5.0482
+[INFO] Training full model with seed=42
+[INFO] Training full model with seed=2025
+[INFO] Training full model with seed=777
+[TEST 0] [MODEL 0] SMAPE_competition: 85.1761
+[TEST 0] [MEAN] SMAPE_all: 107.4793
+[TEST 0] [MEAN] SMAPE_competition: 83.7720
+[TEST 0] [MEAN] RMSE: 13.1178
+[TEST 0] [MEAN] MAE: 3.9499
+[TEST 0] [MED] SMAPE_all: 107.8621
+[TEST 0] [MED] SMAPE_competition: 85.5301
+[TEST 0] [MED] RMSE: 13.1625
+[TEST 0] [MED] MAE: 3.9493
+[TEST 1] [MODEL 0] SMAPE_competition: 77.4945
+[TEST 1] [MEAN] SMAPE_all: 97.2273
+[TEST 1] [MEAN] SMAPE_competition: 75.8786
+[TEST 1] [MEAN] RMSE: 6.7741
+[TEST 1] [MEAN] MAE: 2.6658
+[TEST 1] [MED] SMAPE_all: 97.3630
+[TEST 1] [MED] SMAPE_competition: 77.5678
+[TEST 1] [MED] RMSE: 6.8952
+[TEST 1] [MED] MAE: 2.6888
+[TEST 2] [MODEL 0] SMAPE_competition: 90.5788
+[TEST 2] [MEAN] SMAPE_all: 111.9326
+[TEST 2] [MEAN] SMAPE_competition: 89.5076
+[TEST 2] [MEAN] RMSE: 15.2155
+[TEST 2] [MEAN] MAE: 4.6892
+[TEST 2] [MED] SMAPE_all: 111.6719
+[TEST 2] [MED] SMAPE_competition: 90.4838
+[TEST 2] [MED] RMSE: 15.3050
+[TEST 2] [MED] MAE: 4.7037
+[TEST 3] [MODEL 0] SMAPE_competition: 74.8331
+[TEST 3] [MEAN] SMAPE_all: 95.6382
+[TEST 3] [MEAN] SMAPE_competition: 73.3517
+[TEST 3] [MEAN] RMSE: 20.8356
+[TEST 3] [MEAN] MAE: 7.2141
+[TEST 3] [MED] SMAPE_all: 95.3628
+[TEST 3] [MED] SMAPE_competition: 74.4549
+[TEST 3] [MED] RMSE: 20.9104
+[TEST 3] [MED] MAE: 7.2444
+[TEST 4] [MODEL 0] SMAPE_competition: 76.4775
+[TEST 4] [MEAN] SMAPE_all: 98.5517
+[TEST 4] [MEAN] SMAPE_competition: 74.7386
+[TEST 4] [MEAN] RMSE: 18.3396
+[TEST 4] [MEAN] MAE: 5.8703
+[TEST 4] [MED] SMAPE_all: 98.5388
+[TEST 4] [MED] SMAPE_competition: 75.8650
+[TEST 4] [MED] RMSE: 18.4308
+[TEST 4] [MED] MAE: 5.9177
+[TEST 5] [MODEL 0] SMAPE_competition: 70.8499
+[TEST 5] [MEAN] SMAPE_all: 91.5853
+[TEST 5] [MEAN] SMAPE_competition: 69.0036
+[TEST 5] [MEAN] RMSE: 13.0871
+[TEST 5] [MEAN] MAE: 4.8195
+[TEST 5] [MED] SMAPE_all: 91.2478
+[TEST 5] [MED] SMAPE_competition: 69.9481
+[TEST 5] [MED] RMSE: 13.2362
+[TEST 5] [MED] MAE: 4.8380
+[TEST 6] [MODEL 0] SMAPE_competition: 69.1868
+[TEST 6] [MEAN] SMAPE_all: 91.7187
+[TEST 6] [MEAN] SMAPE_competition: 67.5463
+[TEST 6] [MEAN] RMSE: 22.8840
+[TEST 6] [MEAN] MAE: 7.6542
+[TEST 6] [MED] SMAPE_all: 91.0590
+[TEST 6] [MED] SMAPE_competition: 68.1114
+[TEST 6] [MED] RMSE: 22.8557
+[TEST 6] [MED] MAE: 7.6233
+[TEST 7] [MODEL 0] SMAPE_competition: 87.6246
+[TEST 7] [MEAN] SMAPE_all: 104.0881
+[TEST 7] [MEAN] SMAPE_competition: 86.3193
+[TEST 7] [MEAN] RMSE: 11.8199
+[TEST 7] [MEAN] MAE: 3.0788
+[TEST 7] [MED] SMAPE_all: 103.9254
+[TEST 7] [MED] SMAPE_competition: 87.5225
+[TEST 7] [MED] RMSE: 11.8255
+[TEST 7] [MED] MAE: 3.0922
+[TEST 8] [MODEL 0] SMAPE_competition: 88.4718
+[TEST 8] [MEAN] SMAPE_all: 107.9025
+[TEST 8] [MEAN] SMAPE_competition: 87.0415
+[TEST 8] [MEAN] RMSE: 16.1483
+[TEST 8] [MEAN] MAE: 4.4685
+[TEST 8] [MED] SMAPE_all: 108.6852
+[TEST 8] [MED] SMAPE_competition: 89.1506
+[TEST 8] [MED] RMSE: 16.2365
+[TEST 8] [MED] MAE: 4.4927
+[TEST 9] [MODEL 0] SMAPE_competition: 86.4050
+[TEST 9] [MEAN] SMAPE_all: 110.5246
+[TEST 9] [MEAN] SMAPE_competition: 85.5602
+[TEST 9] [MEAN] RMSE: 14.4644
+[TEST 9] [MEAN] MAE: 4.7735
+[TEST 9] [MED] SMAPE_all: 110.0474
+[TEST 9] [MED] SMAPE_competition: 86.3010
+[TEST 9] [MED] RMSE: 14.4805
+[TEST 9] [MED] MAE: 4.7787
+[INFO] submission saved: c:\Users\DS29\Documents\proj\ml\open\submission.csv

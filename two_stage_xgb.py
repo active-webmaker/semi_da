@@ -4,6 +4,8 @@ from typing import Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 import xgboost
+import lightgbm as lgb
+from catboost import CatBoostClassifier, CatBoostRegressor
 from dotenv import load_dotenv
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
@@ -189,6 +191,89 @@ def fit_two_stage_full(
     if not np.any(nonzero_mask):
         raise ValueError("학습 데이터에서 매출수량>0 샘플이 없어 2-stage 회귀 모델을 학습할 수 없습니다.")
     # 회귀 타깃에 log1p 변환 적용
+    y_reg_train = np.log1p(y[nonzero_mask])
+    reg.fit(X.loc[nonzero_mask], y_reg_train)
+    return clf, reg
+
+
+def fit_two_stage_full_catboost(
+    train_df: pd.DataFrame,
+    feature_cols: List[str],
+    random_state: int = 42,
+) -> Tuple[CatBoostClassifier, CatBoostRegressor]:
+    """CatBoost 기반 2-stage 전체 학습 (분류 + 회귀, log1p 타깃).
+
+    현재 feature들은 모두 수치형으로 인코딩되어 있으므로 cat_features 지정 없이 사용한다.
+    """
+    X = train_df[feature_cols]
+    y = train_df["매출수량"].values
+    y_zero = (y == 0).astype(int)
+
+    clf = CatBoostClassifier(
+        iterations=300,
+        learning_rate=0.05,
+        depth=6,
+        loss_function="Logloss",
+        random_seed=random_state,
+        verbose=False,
+    )
+    clf.fit(X, y_zero)
+
+    reg = CatBoostRegressor(
+        iterations=300,
+        learning_rate=0.05,
+        depth=8,
+        loss_function="RMSE",
+        random_seed=random_state,
+        verbose=False,
+    )
+
+    nonzero_mask = y > 0
+    if not np.any(nonzero_mask):
+        raise ValueError("학습 데이터에서 매출수량>0 샘플이 없어 2-stage 회귀 모델을 학습할 수 없습니다.")
+    y_reg_train = np.log1p(y[nonzero_mask])
+    reg.fit(X.loc[nonzero_mask], y_reg_train)
+    return clf, reg
+
+
+def fit_two_stage_full_lgbm(
+    train_df: pd.DataFrame,
+    feature_cols: List[str],
+    random_state: int = 42,
+) -> Tuple[lgb.LGBMClassifier, lgb.LGBMRegressor]:
+    """LightGBM 기반 2-stage 전체 학습 (분류 + 회귀, log1p 타깃)."""
+    X = train_df[feature_cols]
+    y = train_df["매출수량"].values
+    y_zero = (y == 0).astype(int)
+
+    clf = lgb.LGBMClassifier(
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=-1,
+        subsample=0.8,
+        colsample_bytree=0.9,
+        reg_lambda=1.0,
+        random_state=random_state,
+        n_jobs=-1,
+        objective="binary",
+    )
+    clf.fit(X, y_zero)
+
+    reg = lgb.LGBMRegressor(
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=-1,
+        subsample=0.75,
+        colsample_bytree=1.0,
+        reg_lambda=1.0,
+        random_state=random_state,
+        n_jobs=-1,
+        objective="regression",
+    )
+
+    nonzero_mask = y > 0
+    if not np.any(nonzero_mask):
+        raise ValueError("학습 데이터에서 매출수량>0 샘플이 없어 2-stage 회귀 모델을 학습할 수 없습니다.")
     y_reg_train = np.log1p(y[nonzero_mask])
     reg.fit(X.loc[nonzero_mask], y_reg_train)
     return clf, reg
@@ -604,10 +689,25 @@ def main() -> None:
 
     # 제출용: 전체 train으로 여러 seed로 재학습 (앙상블)
     ensemble_seeds = [42, 2025, 777]
-    ensemble_models: List[Tuple[xgboost.XGBClassifier, xgboost.XGBRegressor]] = []
+    # XGBoost / LightGBM / CatBoost 2-stage 모델 모두를 담는 앙상블 리스트
+    ensemble_models: List[Tuple[object, object]] = []
+
+    # XGBoost 기반 2-stage 모델들
     for seed in ensemble_seeds:
-        log(f"[INFO] Training full model with seed={seed}")
+        log(f"[INFO] Training XGBoost full model with seed={seed}")
         clf_i, reg_i = fit_two_stage_full(train_enc, feature_cols, random_state=seed)
+        ensemble_models.append((clf_i, reg_i))
+
+    # LightGBM 기반 2-stage 모델들
+    for seed in ensemble_seeds:
+        log(f"[INFO] Training LightGBM full model with seed={seed}")
+        clf_i, reg_i = fit_two_stage_full_lgbm(train_enc, feature_cols, random_state=seed)
+        ensemble_models.append((clf_i, reg_i))
+
+    # CatBoost 기반 2-stage 모델들
+    for seed in ensemble_seeds:
+        log(f"[INFO] Training CatBoost full model with seed={seed}")
+        clf_i, reg_i = fit_two_stage_full_catboost(train_enc, feature_cols, random_state=seed)
         ensemble_models.append((clf_i, reg_i))
 
     # TEST 세트에서 단일/평균/median 앙상블 성능 확인
@@ -653,15 +753,21 @@ def main() -> None:
     menu_cols = [c for c in sub.columns if c != "영업일자"]
 
     forecasts_by_test: Dict[str, pd.DataFrame] = {}
+    # TEST별 예측 대상 실제 날짜 정보를 저장할 리스트
+    forecast_date_rows: List[Dict[str, object]] = []
+
     for test_id in range(10):
         test_name = f"TEST_{test_id:02d}.csv"
         if test_name not in test_files:
             continue
 
+        test_df_raw = test_files[test_name]
+        last_date = pd.to_datetime(test_df_raw["영업일자"].max())
+
         preds_7_list: List[pd.DataFrame] = []
         for clf_i, reg_i in ensemble_models:
             preds_7_i = forecast_7days_for_test(
-                test_df_raw=test_files[test_name],
+                test_df_raw=test_df_raw,
                 menu_cols=menu_cols,
                 clf=clf_i,
                 reg=reg_i,
@@ -677,6 +783,17 @@ def main() -> None:
         # DataFrame 평균 앙상블 (제출용)
         preds_7_mean = sum(preds_7_list) / len(preds_7_list)
         forecasts_by_test[f"TEST_{test_id:02d}"] = preds_7_mean
+
+        # 해당 TEST에 대해 예측한 실제 달력 날짜 정보도 함께 저장
+        for d in range(1, 8):
+            cur_date = last_date + pd.Timedelta(days=d)
+            forecast_date_rows.append(
+                {
+                    "test_id": f"TEST_{test_id:02d}",
+                    "day_offset": d,
+                    "forecast_date": cur_date.strftime("%Y-%m-%d"),
+                }
+            )
 
     for i in range(len(sub)):
         key = str(sub.loc[i, "영업일자"])
@@ -695,6 +812,13 @@ def main() -> None:
     output_path = os.path.join(base_dir, "submission.csv")
     sub.to_csv(output_path, index=False, encoding="utf-8-sig")
     log(f"[INFO] submission saved: {output_path}")
+
+    # TEST별 예측 날짜 정보를 별도 CSV로 저장
+    if forecast_date_rows:
+        forecast_dates_df = pd.DataFrame(forecast_date_rows)
+        forecast_dates_path = os.path.join(base_dir, "forecast_dates_by_test.csv")
+        forecast_dates_df.to_csv(forecast_dates_path, index=False, encoding="utf-8-sig")
+        log(f"[INFO] forecast dates saved: {forecast_dates_path}")
 
 
 if __name__ == "__main__":
