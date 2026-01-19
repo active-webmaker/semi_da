@@ -115,6 +115,13 @@ def build_feature_row(
         mapping = cat_encoders[col]
         return int(mapping.get(val, mapping.get("Unknown", 0)))
 
+    lag_1 = float(sales_history[-1]) if len(sales_history) > 0 else 0.0
+    lag_7 = float(sales_history[-7]) if len(sales_history) >= 7 else 0.0
+    if lag_7 > 0:
+        lag_7_ratio = float(lag_1 / (lag_7 + 1e-5))
+    else:
+        lag_7_ratio = 0.0
+
     row: Dict[str, float] = {
         "요일": weekday,
         "주차": int(date.isocalendar().week),
@@ -136,6 +143,10 @@ def build_feature_row(
         "rolling_30_mean": rolling_30,
         "rolling_ratio": float(rolling_7 / (rolling_30 + 1e-5)),
         "메뉴_인코딩": float(menu_mean_train.get(str(menu_full), global_mean_train)),
+        # lag 기반 피처
+        "lag_1": lag_1,
+        "lag_7": lag_7,
+        "lag_7_ratio": lag_7_ratio,
     }
 
     return row
@@ -321,6 +332,11 @@ def add_rolling_features(df: pd.DataFrame) -> pd.DataFrame:
     df["rolling_30_mean"] = df["rolling_30_mean"].fillna(0)
 
     df["rolling_ratio"] = df["rolling_7_mean"] / (df["rolling_30_mean"] + 1e-5)
+
+    # lag 기반 피처: 직전 하루 및 7일 전 매출
+    df["lag_1"] = df.groupby("영업장명_메뉴명")["매출수량"].shift(1).fillna(0)
+    df["lag_7"] = df.groupby("영업장명_메뉴명")["매출수량"].shift(7).fillna(0)
+    df["lag_7_ratio"] = df["lag_1"] / (df["lag_7"] + 1e-5)
 
     return df
 
@@ -572,6 +588,9 @@ def main() -> None:
         "menu_token_cnt",
         "is_premium",
         "rolling_ratio",
+        "lag_1",
+        "lag_7",
+        "lag_7_ratio",
     ]
     feature_cols = [c for c in feature_cols if c in train_enc.columns]
 
