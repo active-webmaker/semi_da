@@ -155,6 +155,7 @@ def build_feature_row(
 def fit_two_stage_full(
     train_df: pd.DataFrame,
     feature_cols: List[str],
+    random_state: int = 42,
 ) -> Tuple[xgboost.XGBClassifier, xgboost.XGBRegressor]:
     X = train_df[feature_cols]
     y = train_df["매출수량"].values
@@ -167,7 +168,7 @@ def fit_two_stage_full(
         subsample=0.8,
         colsample_bytree=0.9,
         reg_lambda=1.0,
-        random_state=42,
+        random_state=random_state,
         n_jobs=-1,
         eval_metric="logloss",
     )
@@ -180,7 +181,7 @@ def fit_two_stage_full(
         subsample=0.75,
         colsample_bytree=1.0,
         gamma=0.0,
-        random_state=42,
+        random_state=random_state,
         n_jobs=-1,
     )
 
@@ -594,32 +595,58 @@ def main() -> None:
     ]
     feature_cols = [c for c in feature_cols if c in train_enc.columns]
 
-    # (선택) 검증 출력 + zero_threshold 탐색
+    # (선택) 검증 출력 + zero_threshold 탐색 (단일 모델 기준)
     _clf_tmp, _reg_tmp, _train_split, _valid_split, best_zero_threshold = train_two_stage(
         train_enc,
         feature_cols,
         valid_ratio=0.1,
     )
 
-    # 제출용: 전체 train으로 재학습
-    clf, reg = fit_two_stage_full(train_enc, feature_cols)
+    # 제출용: 전체 train으로 여러 seed로 재학습 (앙상블)
+    ensemble_seeds = [42, 2025, 777]
+    ensemble_models: List[Tuple[xgboost.XGBClassifier, xgboost.XGBRegressor]] = []
+    for seed in ensemble_seeds:
+        log(f"[INFO] Training full model with seed={seed}")
+        clf_i, reg_i = fit_two_stage_full(train_enc, feature_cols, random_state=seed)
+        ensemble_models.append((clf_i, reg_i))
 
+    # TEST 세트에서 단일/평균/median 앙상블 성능 확인
     for idx, df in enumerate(test_enc_list):
         X_test = df[feature_cols]
         y_true = df["매출수량"].values
 
-        pred = predict_two_stage(clf, reg, X_test, zero_threshold=best_zero_threshold)
+        preds_list = []
+        for model_idx, (clf_i, reg_i) in enumerate(ensemble_models):
+            pred_i = predict_two_stage(clf_i, reg_i, X_test, zero_threshold=best_zero_threshold)
+            preds_list.append(pred_i)
+            if model_idx == 0:
+                # 첫 번째 모델(기준 모델)의 성능도 함께 기록
+                log(
+                    f"[TEST {idx}] [MODEL {model_idx}] SMAPE_competition:",
+                    f"{smape_competition_like(y_true, pred_i):.4f}",
+                )
 
-        log(f"[TEST {idx}] SMAPE_all:", f"{smape(y_true, pred):.4f}")
-        log(f"[TEST {idx}] SMAPE_competition:", f"{smape_competition_like(y_true, pred):.4f}")
-        log(f"[TEST {idx}] RMSE:", f"{np.sqrt(mean_squared_error(y_true, pred)):.4f}")
-        log(f"[TEST {idx}] MAE:", f"{mean_absolute_error(y_true, pred):.4f}")
+        preds_stack = np.vstack(preds_list)  # (n_models, n_samples)
 
-        pred_int = np.clip(np.rint(pred), 0, None)
-        log(f"[TEST {idx}] SMAPE_all (int):", f"{smape(y_true, pred_int):.4f}")
-        log(f"[TEST {idx}] SMAPE_competition (int):", f"{smape_competition_like(y_true, pred_int):.4f}")
-        log(f"[TEST {idx}] RMSE (int):", f"{np.sqrt(mean_squared_error(y_true, pred_int)):.4f}")
-        log(f"[TEST {idx}] MAE (int):", f"{mean_absolute_error(y_true, pred_int):.4f}")
+        # 평균 앙상블
+        pred_mean = preds_stack.mean(axis=0)
+        log(f"[TEST {idx}] [MEAN] SMAPE_all:", f"{smape(y_true, pred_mean):.4f}")
+        log(
+            f"[TEST {idx}] [MEAN] SMAPE_competition:",
+            f"{smape_competition_like(y_true, pred_mean):.4f}",
+        )
+        log(f"[TEST {idx}] [MEAN] RMSE:", f"{np.sqrt(mean_squared_error(y_true, pred_mean)):.4f}")
+        log(f"[TEST {idx}] [MEAN] MAE:", f"{mean_absolute_error(y_true, pred_mean):.4f}")
+
+        # median(quantile) 앙상블
+        pred_median = np.median(preds_stack, axis=0)
+        log(f"[TEST {idx}] [MED] SMAPE_all:", f"{smape(y_true, pred_median):.4f}")
+        log(
+            f"[TEST {idx}] [MED] SMAPE_competition:",
+            f"{smape_competition_like(y_true, pred_median):.4f}",
+        )
+        log(f"[TEST {idx}] [MED] RMSE:", f"{np.sqrt(mean_squared_error(y_true, pred_median)):.4f}")
+        log(f"[TEST {idx}] [MED] MAE:", f"{mean_absolute_error(y_true, pred_median):.4f}")
 
     # submission.csv 생성 (TEST_00~09 각각의 마지막 날짜 이후 7일 예측)
     sub = sample_submission.copy()
@@ -630,19 +657,26 @@ def main() -> None:
         test_name = f"TEST_{test_id:02d}.csv"
         if test_name not in test_files:
             continue
-        preds_7 = forecast_7days_for_test(
-            test_df_raw=test_files[test_name],
-            menu_cols=menu_cols,
-            clf=clf,
-            reg=reg,
-            feature_cols=feature_cols,
-            menu_mean_train=menu_mean_train,
-            global_mean_train=global_mean_train,
-            cat_encoders=encoders,
-            zero_threshold=best_zero_threshold,
-            horizon=7,
-        )
-        forecasts_by_test[f"TEST_{test_id:02d}"] = preds_7
+
+        preds_7_list: List[pd.DataFrame] = []
+        for clf_i, reg_i in ensemble_models:
+            preds_7_i = forecast_7days_for_test(
+                test_df_raw=test_files[test_name],
+                menu_cols=menu_cols,
+                clf=clf_i,
+                reg=reg_i,
+                feature_cols=feature_cols,
+                menu_mean_train=menu_mean_train,
+                global_mean_train=global_mean_train,
+                cat_encoders=encoders,
+                zero_threshold=best_zero_threshold,
+                horizon=7,
+            )
+            preds_7_list.append(preds_7_i)
+
+        # DataFrame 평균 앙상블 (제출용)
+        preds_7_mean = sum(preds_7_list) / len(preds_7_list)
+        forecasts_by_test[f"TEST_{test_id:02d}"] = preds_7_mean
 
     for i in range(len(sub)):
         key = str(sub.loc[i, "영업일자"])
